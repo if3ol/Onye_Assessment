@@ -9,7 +9,7 @@ A full-stack application that uses AI to reconcile conflicting medication record
 ### 1. Clone and install
 ```bash
 git clone <your-repo-url>
-cd ehr-reconciliation
+cd Onye_Assessment
 pip install -r requirements.txt
 ```
 
