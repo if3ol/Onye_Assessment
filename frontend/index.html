@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EHR Reconciliation Engine</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --navy:   #0d1b2a;
+      --panel:  #142032;
+      --border: #1e3048;
+      --teal:   #0ea5a0;
+      --teal-dim: #0d7a76;
+      --amber:  #f59e0b;
+      --red:    #ef4444;
+      --green:  #22c55e;
+      --muted:  #6b8caa;
+      --text:   #e2eaf4;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Sora', sans-serif;
+      background-color: var(--navy);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .mono { font-family: 'DM Mono', monospace; }
+
+    /*  Animations  */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes scanline {
+      0%   { top: -2px; }
+      100% { top: 100%; }
+    }
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 rgba(14,165,160,0.4); }
+      70%  { box-shadow: 0 0 0 10px rgba(14,165,160,0); }
+      100% { box-shadow: 0 0 0 0 rgba(14,165,160,0); }
+    }
+
+    .fade-up { animation: fadeUp 0.4s ease both; }
+    .fade-up-2 { animation: fadeUp 0.4s ease 0.1s both; }
+    .fade-up-3 { animation: fadeUp 0.4s ease 0.2s both; }
+
+    /*  Panel / card  */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    /*  Tab  */
+    .tab {
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active {
+      background: rgba(14,165,160,0.12);
+      color: var(--teal);
+      border-color: var(--teal-dim);
+    }
+
+    /*  Inputs  */
+    textarea, input[type="text"], input[type="password"] {
+      background: #0a1520;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 12px;
+      width: 100%;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus, input:focus { border-color: var(--teal-dim); }
+
+    /* ── Button ─────────────────────────────────── */
+    .btn-primary {
+      background: var(--teal);
+      color: #0a1520;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 11px 28px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary:hover { background: #12c5bf; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-approve {
+      background: rgba(34,197,94,0.15);
+      border: 1px solid rgba(34,197,94,0.4);
+      color: var(--green);
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-approve:hover { background: rgba(34,197,94,0.25); }
+
+    .btn-reject {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.35);
+      color: var(--red);
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-reject:hover { background: rgba(239,68,68,0.22); }
+
+    /*  Confidence arc  */
+    .confidence-ring { animation: pulse-ring 2s ease-out 1; }
+
+    /*  Score bar  */
+    .score-bar-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    /*  Severity badge  */
+    .badge-high   { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+    .badge-medium { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+    .badge-low    { background: rgba(107,140,170,0.15);color: #93b4cc; border: 1px solid rgba(107,140,170,0.3); }
+
+    /*  Safety badge  */
+    .safety-PASSED          { color: var(--green); border-color: rgba(34,197,94,0.35); background: rgba(34,197,94,0.1); }
+    .safety-REVIEW_REQUIRED { color: var(--amber); border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.1); }
+    .safety-FAILED          { color: var(--red);   border-color: rgba(239,68,68,0.35);  background: rgba(239,68,68,0.1); }
+
+    /*  Loading spinner  */
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--teal);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /*  Scanline header effect  */
+    .header-glow {
+      position: relative;
+      overflow: hidden;
+    }
+    .header-glow::after {
+      content: '';
+      position: absolute;
+      left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--teal), transparent);
+      bottom: 0;
+    }
+
+    /*  Source row  */
+    .source-row {
+      border-left: 3px solid var(--border);
+      transition: border-color 0.2s;
+    }
+    .source-row.winner { border-left-color: var(--teal); }
+
+    /*  Score color  */
+    .score-green { color: var(--green); }
+    .score-amber { color: var(--amber); }
+    .score-red   { color: var(--red); }
+
+    label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+
+    #decision-banner { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- 
+     HEADER
+ -->
+<header class="header-glow px-6 py-4 flex items-center justify-between" style="border-bottom: 1px solid var(--border);">
+  <div class="flex items-center gap-3">
+    <div style="width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);"></div>
+    <span class="mono text-sm" style="color:var(--teal); letter-spacing:0.1em;">EHR RECONCILIATION ENGINE</span>
+  </div>
+  <div class="flex items-center gap-2">
+    <div id="status-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);"></div>
+    <span id="status-text" class="mono text-xs" style="color:var(--muted);">Connecting…</span>
+  </div>
+</header>
+
+<!-- 
+     TABS
+ -->
+<div class="px-6 pt-5 pb-0 flex gap-2">
+  <button class="tab active" onclick="switchTab('reconcile')">Medication Reconciliation</button>
+  <button class="tab" onclick="switchTab('quality')">Data Quality</button>
+</div>
+
+<!-- 
+     MAIN
+ -->
+<main class="px-6 py-6 max-w-7xl mx-auto">
+
+  <!--  RECONCILE TAB  -->
+  <div id="tab-reconcile">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Input -->
+      <div class="panel p-5 fade-up">
+        <p class="text-xs mb-3" style="color:var(--muted);">Paste JSON payload or use the example below.</p>
+        <label class="block mb-1">Request payload</label>
+        <textarea id="reconcile-input" rows="22" spellcheck="false"></textarea>
+        <div class="flex items-center gap-3 mt-4">
+          <button class="btn-primary" onclick="runReconcile()" id="btn-reconcile">Run Reconciliation</button>
+          <button onclick="loadReconcileExample()" style="font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;text-decoration:underline;">Load example</button>
+        </div>
+        <p id="reconcile-error" class="mt-3 text-xs" style="color:var(--red);display:none;"></p>
+      </div>
+
+      <!-- Output -->
+      <div id="reconcile-output" style="display:none;">
+
+        <!-- Decision banner -->
+        <div id="decision-banner" class="panel p-4 mb-4 fade-up flex items-center justify-between">
+          <span id="decision-text" class="text-sm font-semibold"></span>
+          <div class="flex gap-2">
+            <button class="btn-approve" onclick="setDecision('approved')"> Approve</button>
+            <button class="btn-reject"  onclick="setDecision('rejected')"> Reject</button>
+          </div>
+        </div>
+
+        <!-- Reconciled medication card -->
+        <div class="panel p-5 mb-4 fade-up">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <label class="block mb-1">Reconciled Medication</label>
+              <p id="out-medication" class="text-xl font-semibold" style="color:var(--teal);"></p>
+            </div>
+            <div class="text-right shrink-0">
+              <!-- SVG confidence ring -->
+              <svg width="72" height="72" viewBox="0 0 72 72">
+                <circle cx="36" cy="36" r="28" fill="none" stroke="var(--border)" stroke-width="6"/>
+                <circle id="confidence-arc" cx="36" cy="36" r="28" fill="none"
+                  stroke="var(--teal)" stroke-width="6"
+                  stroke-dasharray="175.93" stroke-dashoffset="175.93"
+                  stroke-linecap="round"
+                  transform="rotate(-90 36 36)"
+                  style="transition: stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1);"
+                />
+                <text id="confidence-text" x="36" y="41" text-anchor="middle"
+                  font-family="DM Mono" font-size="13" font-weight="500" fill="#e2eaf4"></text>
+              </svg>
+              <p class="text-xs mt-1" style="color:var(--muted);">Confidence</p>
+            </div>
+          </div>
+
+          <!-- Safety + reasoning -->
+          <div class="mt-4 flex items-center gap-2 flex-wrap">
+            <span id="out-safety" class="mono text-xs px-2 py-1 rounded border font-medium"></span>
+            <span class="text-xs" style="color:var(--muted);">Clinical Safety Check</span>
+          </div>
+          <p id="out-reasoning" class="mt-3 text-sm leading-relaxed" style="color:#a8c0d8;"></p>
+        </div>
+
+        <!-- Recommended actions -->
+        <div class="panel p-5 mb-4 fade-up-2">
+          <label class="block mb-3">Recommended Actions</label>
+          <ul id="out-actions" class="space-y-2"></ul>
+        </div>
+
+        <!-- Source analysis -->
+        <div class="panel p-5 fade-up-3">
+          <label class="block mb-3">Source Analysis</label>
+          <div id="out-sources" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <!-- Loading state -->
+      <div id="reconcile-loading" style="display:none;" class="flex items-center gap-3 p-6">
+        <div class="spinner"></div>
+        <span class="text-sm" style="color:var(--muted);">Reconciling records…</span>
+      </div>
+    </div>
+  </div>
+
+  <!--  QUALITY TAB  -->
+  <div id="tab-quality" style="display:none;">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Input -->
+      <div class="panel p-5 fade-up">
+        <p class="text-xs mb-3" style="color:var(--muted);">Paste a patient record to score its data quality.</p>
+        <label class="block mb-1">Request payload</label>
+        <textarea id="quality-input" rows="22" spellcheck="false"></textarea>
+        <div class="flex items-center gap-3 mt-4">
+          <button class="btn-primary" onclick="runQuality()" id="btn-quality">Validate Quality</button>
+          <button onclick="loadQualityExample()" style="font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none;text-decoration:underline;">Load example</button>
+        </div>
+        <p id="quality-error" class="mt-3 text-xs" style="color:var(--red);display:none;"></p>
+      </div>
+
+      <!-- Output -->
+      <div id="quality-output" style="display:none;">
+
+        <!-- Overall score -->
+        <div class="panel p-5 mb-4 fade-up">
+          <label class="block mb-4">Overall Data Quality Score</label>
+          <div class="flex items-end gap-4 mb-4">
+            <span id="out-overall-score" class="text-5xl font-bold mono"></span>
+            <span class="text-lg mb-1" style="color:var(--muted);">/ 100</span>
+          </div>
+          <div class="score-bar-track mb-6">
+            <div id="out-overall-bar" class="score-bar-fill" style="width:0%;"></div>
+          </div>
+
+          <!-- Breakdown -->
+          <label class="block mb-3">Dimension Breakdown</label>
+          <div class="space-y-3" id="out-breakdown"></div>
+        </div>
+
+        <!-- Issues -->
+        <div class="panel p-5 fade-up-2">
+          <label class="block mb-3">Issues Detected</label>
+          <div id="out-issues" class="space-y-2"></div>
+        </div>
+
+        <!-- AI analysis -->
+        <div class="panel p-5 mt-4 fade-up-3" id="ai-analysis-block" style="display:none;">
+          <label class="block mb-2">AI Clinical Summary</label>
+          <p id="out-ai-analysis" class="text-sm leading-relaxed" style="color:#a8c0d8;"></p>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div id="quality-loading" style="display:none;" class="flex items-center gap-3 p-6">
+        <div class="spinner"></div>
+        <span class="text-sm" style="color:var(--muted);">Analysing record quality…</span>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+//  Helpers 
+
+const API_BASE = '';
+let _apiKey = '__API_KEY__';
+
+function apiKey() { return _apiKey; }
+
+async function initToken() {
+  // _apiKey is injected server-side — just verify the server is reachable
+  if (_apiKey) {
+    document.getElementById('status-dot').style.background = 'var(--teal)';
+    document.getElementById('status-dot').style.boxShadow = '0 0 6px var(--teal)';
+    document.getElementById('status-text').textContent = 'Connected';
+    document.getElementById('status-text').style.color = 'var(--teal)';
+  } else {
+    document.getElementById('status-dot').style.background = 'var(--red)';
+    document.getElementById('status-text').textContent = 'API unreachable';
+    document.getElementById('status-text').style.color = 'var(--red)';
+  }
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideError(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+function setLoading(prefix, on) {
+  document.getElementById(`${prefix}-loading`).style.display = on ? 'flex' : 'none';
+  document.getElementById(`btn-${prefix}`).disabled = on;
+}
+
+function scoreColor(score) {
+  if (score >= 75) return 'var(--green)';
+  if (score >= 50) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function scoreClass(score) {
+  if (score >= 75) return 'score-green';
+  if (score >= 50) return 'score-amber';
+  return 'score-red';
+}
+
+//  Tab switching 
+
+function switchTab(name) {
+  ['reconcile', 'quality'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0 && name === 'reconcile') || (i === 1 && name === 'quality'));
+  });
+}
+
+//  Example data 
+
+function loadReconcileExample() {
+  document.getElementById('reconcile-input').value = JSON.stringify({
+    patient_context: {
+      age: 67,
+      conditions: ["Type 2 Diabetes", "Hypertension"],
+      recent_labs: { eGFR: 45 }
+    },
+    sources: [
+      { system: "Hospital EHR",  medication: "Metformin 1000mg twice daily", last_updated: "2024-10-15", source_reliability: "high" },
+      { system: "Primary Care",  medication: "Metformin 500mg twice daily",  last_updated: "2025-01-20", source_reliability: "high" },
+      { system: "Pharmacy",      medication: "Metformin 1000mg daily",       last_filled:  "2025-01-25", source_reliability: "medium" }
+    ]
+  }, null, 2);
+}
+
+function loadQualityExample() {
+  document.getElementById('quality-input').value = JSON.stringify({
+    demographics: { name: "John Doe", dob: "1955-03-15", gender: "M" },
+    medications: ["Metformin 500mg", "Lisinopril 10mg"],
+    allergies: [],
+    conditions: ["Type 2 Diabetes"],
+    vital_signs: { blood_pressure: "340/180", heart_rate: 72 },
+    last_updated: "2024-06-15"
+  }, null, 2);
+}
+
+//  Reconciliation 
+
+async function runReconcile() {
+  hideError('reconcile-error');
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById('reconcile-input').value);
+  } catch {
+    showError('reconcile-error', 'Invalid JSON — check your input.');
+    return;
+  }
+
+  if (!apiKey()) { showError('reconcile-error', 'API not connected — is the server running?'); return; }
+
+  setLoading('reconcile', true);
+  document.getElementById('reconcile-output').style.display = 'none';
+  document.getElementById('decision-banner').style.display = 'none';
+  // Reset banner state for fresh run
+  const banner = document.getElementById('decision-banner');
+  banner.style.borderColor = '';
+  const decisionText = document.getElementById('decision-text');
+  decisionText.style.color = '';
+  banner.querySelectorAll('button').forEach(b => b.style.display = '');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/reconcile/medication`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    renderReconcile(data);
+  } catch (e) {
+    showError('reconcile-error', `Error: ${e.message}`);
+  } finally {
+    setLoading('reconcile', false);
+  }
+}
+
+function renderReconcile(data) {
+  // Medication + confidence ring
+  document.getElementById('out-medication').textContent = data.reconciled_medication;
+
+  const score = Math.round(data.confidence_score * 100);
+  const circumference = 175.93;
+  const offset = circumference - (circumference * data.confidence_score);
+  document.getElementById('confidence-arc').style.strokeDashoffset = offset;
+  document.getElementById('confidence-text').textContent = `${score}%`;
+
+  // Safety badge
+  const safetyEl = document.getElementById('out-safety');
+  safetyEl.textContent = data.clinical_safety_check.replace('_', ' ');
+  safetyEl.className = `mono text-xs px-2 py-1 rounded border font-medium safety-${data.clinical_safety_check}`;
+
+  // Reasoning
+  document.getElementById('out-reasoning').textContent = data.reasoning;
+
+  // Actions
+  const actionsEl = document.getElementById('out-actions');
+  actionsEl.innerHTML = data.recommended_actions.map(a => `
+    <li class="text-sm" style="color:#a8c0d8;">
+        ${a}
+    </li>
+    `).join('');
+
+  // Source analysis
+  const sourcesEl = document.getElementById('out-sources');
+  const maxScore = Math.max(...data.source_analysis.map(s => s.composite_score));
+  sourcesEl.innerHTML = data.source_analysis.map(s => {
+    const isWinner = s.composite_score === maxScore;
+    const pct = Math.round(s.composite_score * 100);
+    return `
+      <div class="source-row p-3 rounded ${isWinner ? 'winner' : ''}" style="background:#0a1520;">
+        <div class="flex items-center justify-between mb-2">
+          <div>
+            <span class="text-sm font-medium">${s.system}</span>
+            ${isWinner ? '<span class="mono text-xs ml-2 px-1.5 py-0.5 rounded" style="background:rgba(14,165,160,0.15);color:var(--teal);">SELECTED</span>' : ''}
+          </div>
+          <span class="mono text-xs" style="color:var(--muted);">${pct}%</span>
+        </div>
+        <p class="mono text-xs mb-2" style="color:var(--teal);">${s.medication}</p>
+        <div class="score-bar-track mb-1">
+          <div class="score-bar-fill" style="width:${pct}%;background:${isWinner ? 'var(--teal)' : 'var(--muted)'}"></div>
+        </div>
+        <div class="flex gap-4 mt-2">
+          ${['recency_score','reliability_score','agreement_score'].map(k => `
+            <div>
+              <span class="text-xs" style="color:var(--muted);">${k.replace('_score','')}</span>
+              <span class="mono text-xs ml-1" style="color:#a8c0d8;">${Math.round(s[k]*100)}%</span>
+            </div>
+          `).join('')}
+        </div>
+        <p class="text-xs mt-1" style="color:var(--muted);">Updated: ${s.effective_date}</p>
+      </div>
+    `;
+  }).join('');
+
+  // Show decision banner
+  const banner = document.getElementById('decision-banner');
+  banner.style.display = 'flex';
+  document.getElementById('decision-text').textContent =
+    `Accept reconciled medication: ${data.reconciled_medication}?`;
+
+  document.getElementById('reconcile-output').style.display = 'block';
+}
+
+function setDecision(choice) {
+  const banner = document.getElementById('decision-banner');
+  const text = document.getElementById('decision-text');
+  if (choice === 'approved') {
+    text.textContent = ' Suggestion approved and recorded';
+    text.style.color = 'var(--green)';
+    banner.style.borderColor = 'rgba(34,197,94,0.3)';
+  } else {
+    text.textContent = ' Suggestion rejected, manual review required';
+    text.style.color = 'var(--red)';
+    banner.style.borderColor = 'rgba(239,68,68,0.3)';
+  }
+  // Hide the buttons after deciding
+  banner.querySelectorAll('button').forEach(b => b.style.display = 'none');
+}
+
+//  Data Quality 
+
+async function runQuality() {
+  hideError('quality-error');
+  let payload;
+  try {
+    payload = JSON.parse(document.getElementById('quality-input').value);
+  } catch {
+    showError('quality-error', 'Invalid JSON — check your input.');
+    return;
+  }
+
+  if (!apiKey()) { showError('quality-error', 'API not connected — is the server running?'); return; }
+
+  setLoading('quality', true);
+  document.getElementById('quality-output').style.display = 'none';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/validate/data-quality`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey() },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    renderQuality(data);
+  } catch (e) {
+    showError('quality-error', `Error: ${e.message}`);
+  } finally {
+    setLoading('quality', false);
+  }
+}
+
+function renderQuality(data) {
+  const score = data.overall_score;
+  const color = scoreColor(score);
+
+  // Overall score
+  const scoreEl = document.getElementById('out-overall-score');
+  scoreEl.textContent = score;
+  scoreEl.style.color = color;
+
+  const bar = document.getElementById('out-overall-bar');
+  bar.style.width = `${score}%`;
+  bar.style.background = color;
+
+  // Dimension breakdown
+  const dims = [
+    { key: 'completeness',         label: 'Completeness' },
+    { key: 'accuracy',             label: 'Accuracy' },
+    { key: 'timeliness',           label: 'Timeliness' },
+    { key: 'clinical_plausibility',label: 'Clinical Plausibility' },
+  ];
+
+  document.getElementById('out-breakdown').innerHTML = dims.map(d => {
+    const val = data.breakdown[d.key];
+    const c = scoreColor(val);
+    return `
+      <div>
+        <div class="flex justify-between mb-1">
+          <span class="text-xs" style="color:var(--muted);">${d.label}</span>
+          <span class="mono text-xs font-medium" style="color:${c};">${val}</span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" style="width:${val}%;background:${c};"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Issues
+  const issuesEl = document.getElementById('out-issues');
+  if (data.issues_detected.length === 0) {
+    issuesEl.innerHTML = '<p class="text-sm" style="color:var(--green);">No issues detected.</p>';
+  } else {
+    issuesEl.innerHTML = data.issues_detected.map(issue => `
+      <div class="flex items-start gap-3 p-3 rounded" style="background:#0a1520;">
+        <span class="badge-${issue.severity} mono text-xs px-2 py-0.5 rounded shrink-0 mt-0.5">${issue.severity.toUpperCase()}</span>
+        <div>
+          <p class="mono text-xs mb-0.5" style="color:var(--muted);">${issue.field}</p>
+          <p class="text-sm">${issue.issue}</p>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // AI analysis
+  if (data.ai_analysis) {
+    document.getElementById('out-ai-analysis').textContent = data.ai_analysis;
+    document.getElementById('ai-analysis-block').style.display = 'block';
+  }
+
+  document.getElementById('quality-output').style.display = 'block';
+}
+
+//  Init 
+document.addEventListener('DOMContentLoaded', () => {
+  initToken();
+  loadReconcileExample();
+  loadQualityExample();
+});
+</script>
+</body>
+</html>
